@@ -56,6 +56,9 @@ class GAN(nn.Module):
         y = self.d(x_fake)
         return y
 
+    ## This method is only used for sampling for visualizations;
+    ## it does NOT keep gradient. For training, use sample_latent
+    ## in combination with g(z) and d(x)
     def sample(self, latent_dim, num_samples):
         z = self.sample_latent(latent_dim, num_samples)
         with torch.no_grad():
@@ -63,6 +66,7 @@ class GAN(nn.Module):
         fake = fake.numpy()
         return fake
 
+    ## Samples from the latent space, for now simply N(0,1)^n
     def sample_latent(self, latent_dim, num_samples):
         z = np.random.normal(size=(num_samples, latent_dim))
         z = torch.from_numpy(z).float()
@@ -118,7 +122,7 @@ for num_it in range(NUM_ITERS):
             z = gan.sample_latent(32, MB_SIZE)
             x = sample_mnist(MB_SIZE)
 
-            objective = torch.log(EPSILON + d(x)) + torch.log(EPSILON + 1 - gan(z))
+            objective = torch.log(EPSILON + d(x)) + torch.log(EPSILON + 1 - d(g(z)))
             # Discriminator's goal is to maximize, so we negate objective
             # function, since pytorch optimizers minimize.
             objective = -torch.sum(objective)
@@ -133,9 +137,9 @@ for num_it in range(NUM_ITERS):
         z = gan.sample_latent(32, MB_SIZE)
         
         ## VANILLA LOSS:
-        #objective = torch.sum(torch.log(EPSILON + 1 - gan(z)))
+        #objective = torch.sum(torch.log(EPSILON + 1 - d(g(z))))
         ## UNSATURAING LOSS:
-        objective = -torch.sum(torch.log(EPSILON + gan(z)))
+        objective = -torch.sum(torch.log(EPSILON + d(g(z))))
         
         objective.backward()
         
