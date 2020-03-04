@@ -31,9 +31,6 @@ MB_SIZE = 64 # Minibatch size
 g = MNISTFullyConnectedGenerator(latent_dim=LATENT_DIM)
 d = MNISTFullyConnectedDiscriminator()
 
-g.train()
-d.train()
-
 G_LR = 0.05
 D_LR = 0.2
 
@@ -61,6 +58,9 @@ for num_it in range(NUM_ITERS):
     if VERBOSE:
         print()
     print(f"Iteration {num_it+1}/{NUM_ITERS}")
+
+    g.train()
+    d.train()
 
     ## TODO: Find better way to record/average these (?)
     d_grad_norm = 0.0 
@@ -117,7 +117,10 @@ for num_it in range(NUM_ITERS):
         # Record gradient magnitudes
         with torch.no_grad():
             g_grad_norm += get_gradient_norm(g.parameters()).item() / NUM_MBS
-        
+
+
+    g.eval()
+    d.eval()
 
     # Estimate the value of V(D,G)
     with torch.no_grad():
