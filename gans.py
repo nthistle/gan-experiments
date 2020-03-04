@@ -4,51 +4,16 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from torch.nn.utils import parameters_to_vector
-from models import *
 from torchvision import datasets
 
-## ==================== UTILITY ====================
+from models import *
+from util import *
 
-# Samples from N(0,1)^{latent_dim}
-def sample_latent_prior(latent_dim, batch_size):
-    z = np.random.normal(size=(batch_size, latent_dim))
-    return torch.from_numpy(z).float()
-
-# Does not preserve gradient; ONLY use this for visualization purposes
-def sample_generator(generator, latent_dim, batch_size):
-    z = sample_latent_prior(latent_dim, batch_size)
-    with torch.no_grad():
-        fake = generator(z)
-    return fake.numpy()
-
-# Hardcoded method to sample 25 images from p_g(x), and arrange them
-# in a 5x5 tile.
-def sample_gan_25(generator, latent_dim, scale=5):
-    canvas = np.zeros((5 * 28, 5 * 28), dtype=np.uint8)
-    samples = sample_generator(g, latent_dim, 25)
-    for i in range(5):
-        for j in range(5):
-            canvas[28*i:28*i+28,28*j:28*j+28] = \
-                (255 * samples[5*i + j].reshape((28,28))).astype(np.uint8)
-    return canvas.repeat(scale, axis=0).repeat(scale, axis=1)
-
-## TODO: confirm that this is properly normalized for # of parameters...
-def get_gradient_norm(parameters):
-    grads = []
-    for param in parameters:
-        grads.append(param.grad.view(-1))
-    grads = torch.cat(grads)
-    return torch.norm(grads, p=2)
-
-## ==================== TRAINING ====================
-
+import json
 import random # for sampling
-from PIL import Image # for writing benchmarks
 import os
-random.seed(12345)
 
-if not os.path.exists("run_samples"):
-    os.mkdir("run_samples")
+random.seed(12345)
 
 mnist = datasets.MNIST("../data", train=True, download=True)
 mnist_x = mnist.data
@@ -58,10 +23,15 @@ def sample_mnist(minibatch_size):
     x = (x.reshape((-1, 784)) / 255.).float()
     return x
 
+RESULTS_DIR = "runs/run1"
+
+VERBOSE = False
+
 EPSILON = 1e-7
 LATENT_DIM = 32
 NUM_ITERS = 100
 NUM_MBS = 20
+MB_SIZE = 64 # Minibatch size
 
 g = MNISTFullyConnectedGenerator(latent_dim=LATENT_DIM)
 d = MNISTFullyConnectedDiscriminator()
@@ -69,10 +39,11 @@ d = MNISTFullyConnectedDiscriminator()
 g.train()
 d.train()
 
-MB_SIZE = 64 # Minibatch size
+G_LR = 0.05
+D_LR = 0.2
 
-g_opt = optim.SGD(g.parameters(), lr=0.05)
-d_opt = optim.SGD(d.parameters(), lr=0.2)
+g_opt = optim.SGD(g.parameters(), lr=G_LR)
+d_opt = optim.SGD(d.parameters(), lr=D_LR)
 
 k = 1
 
@@ -84,9 +55,16 @@ training_logs["d_fake_acc"] = []
 training_logs["d_grad_norm"] = []
 training_logs["g_grad_norm"] = []
 
+if not os.path.exists(RESULTS_DIR):
+    os.mkdir(RESULTS_DIR)
+
+# Used for consistent samples
+sampling_vec = sample_latent_prior(LATENT_DIM, 64)
+
 # Do NUM_ITERS iterations
 for num_it in range(NUM_ITERS):
-    print()
+    if VERBOSE:
+        print()
     print(f"Iteration {num_it+1}/{NUM_ITERS}")
 
     ## TODO: Find better way to record/average these (?)
@@ -155,9 +133,10 @@ for num_it in range(NUM_ITERS):
         d_real_acc = (d(x) > 0.5).float().mean().item()
         d_fake_acc = (d(g(z)) < 0.5).float().mean().item()
 
-    print(f"V(D,G) = {value}")
-    print(f"D(x) acc = {d_real_acc}")
-    print(f"D(g(z)) acc = {d_fake_acc}")
+    if VERBOSE:
+        print(f"V(D,G) = {value}")
+        print(f"D(x) acc = {d_real_acc}")
+        print(f"D(g(z)) acc = {d_fake_acc}")
 
     training_logs["iteration"].append(num_it)
     training_logs["v"].append(value)
@@ -166,11 +145,23 @@ for num_it in range(NUM_ITERS):
     training_logs["d_grad_norm"].append(d_grad_norm)
     training_logs["g_grad_norm"].append(g_grad_norm)
 
-    im = Image.fromarray(sample_gan_25(g, LATENT_DIM))
-    im.save("run_samples/iteration_%03d.png" % num_it)
+    with torch.no_grad():
+        sampled_ims = g(sampling_vec).numpy().reshape(-1, 28, 28)
+    im = convert_to_image(tile_images(sampled_ims, (8,8), 4))
+    im.save(os.path.join(RESULTS_DIR, "iteration_%03d.png" % num_it))
 
-with open("logs.csv", "w") as f:
+with open(os.path.join(RESULTS_DIR, "logs.csv"), "w") as f:
     keys = list(training_logs.keys())
     f.write(",".join(keys) + "\n")
     for i in range(len(training_logs["iteration"])):
         f.write(",".join(str(training_logs[key][i]) for key in keys) + "\n")
+
+with open(os.path.join(RESULTS_DIR, "hyperparams.json"), "w") as f:
+    json.dump({
+        "LATENT_DIM" : LATENT_DIM,
+        "NUM_ITERS" : NUM_ITERS,
+        "NUM_MBS" : NUM_MBS,
+        "MB_SIZE" : MB_SIZE,
+        "G_LR" : G_LR,
+        "D_LR" : D_LR
+        }, f)
