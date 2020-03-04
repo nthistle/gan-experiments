@@ -1,13 +1,18 @@
+SEED = 12345
+
+import numpy as np
+np.random.seed(SEED)
 import torch
+torch.manual_seed(SEED)
+
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import numpy as np
 from torch.nn.utils import parameters_to_vector
-from torchvision import datasets
 
 from models import *
 from util import *
+from datasets import *
 
 import json
 import random # for sampling
@@ -15,14 +20,7 @@ import os
 
 random.seed(12345)
 
-mnist = datasets.MNIST("../data", train=True, download=True)
-mnist_x = mnist.data
-
-def sample_mnist(minibatch_size):
-    x = mnist_x[random.sample(range(mnist_x.shape[0]), minibatch_size)]
-    x = (x.reshape((-1, 784)) / 255.).float()
-    return x
-
+DATASET = MNIST(shape="flat")
 RESULTS_DIR = "runs/run1"
 
 VERBOSE = False
@@ -87,7 +85,7 @@ for num_it in range(NUM_ITERS):
                 x_fake = g(z)
 
             # Sampling from p_data(x) by taking a random sample from our dataset
-            x = sample_mnist(MB_SIZE)
+            x = DATASET.sample_train(MB_SIZE)
 
             # Objective function is V(D,G)
             objective = torch.log(EPSILON + d(x)) + torch.log(EPSILON + 1 - d(x_fake))
@@ -126,7 +124,7 @@ for num_it in range(NUM_ITERS):
 
     # Estimate the value of V(D,G)
     with torch.no_grad():
-        x = sample_mnist(MB_SIZE)
+        x = DATASET.sample_train(MB_SIZE)
         z = sample_latent_prior(LATENT_DIM, MB_SIZE)
         value = torch.mean(torch.log(EPSILON + d(x))) + torch.mean(torch.log(EPSILON + 1 - d(g(z))))
         value = value.item()
@@ -158,6 +156,7 @@ with open(os.path.join(RESULTS_DIR, "logs.csv"), "w") as f:
 
 with open(os.path.join(RESULTS_DIR, "hyperparams.json"), "w") as f:
     json.dump({
+        "DATASET" : str(DATASET),
         "LATENT_DIM" : LATENT_DIM,
         "NUM_ITERS" : NUM_ITERS,
         "NUM_MBS" : NUM_MBS,
