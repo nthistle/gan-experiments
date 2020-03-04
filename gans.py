@@ -15,10 +15,7 @@ from util import *
 from datasets import *
 
 import json
-import random # for sampling
 import os
-
-random.seed(12345)
 
 DATASET = MNIST(shape="flat")
 RESULTS_DIR = "runs/run1"
