@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.utils import parameters_to_vector
+from sklearn.decomposition import PCA
 
 from models import *
 from util import *
@@ -18,15 +19,20 @@ import json
 import os
 
 DATASET = MNIST(shape="flat")
-RESULTS_DIR = "runs/run1"
+RESULTS_DIR = "runs/run3"
+
+D_POINT_REPR_SIZE = 16384
+D_POINT_REPR_PTS = DATASET.sample_train(D_POINT_REPR_SIZE)
 
 VERBOSE = False
+GENERATE_PLOTS = True
+SHOW_PLOTS = True
 
 EPSILON = 1e-7
 LATENT_DIM = 32
 NUM_ITERS = 100
 NUM_MBS = 20
-MB_SIZE = 64 # Minibatch size
+MB_SIZE = 128 # Minibatch size
 
 g = MNISTFullyConnectedGenerator(latent_dim=LATENT_DIM)
 d = MNISTFullyConnectedDiscriminator()
@@ -46,6 +52,8 @@ training_logs["d_real_acc"] = []
 training_logs["d_fake_acc"] = []
 training_logs["d_grad_norm"] = []
 training_logs["g_grad_norm"] = []
+
+discriminator_reprs = []
 
 if not os.path.exists(RESULTS_DIR):
     os.mkdir(RESULTS_DIR)
@@ -131,6 +139,8 @@ for num_it in range(NUM_ITERS):
         d_real_acc = (d(x) > 0.5).float().mean().item()
         d_fake_acc = (d(g(z)) < 0.5).float().mean().item()
 
+        discriminator_reprs.append(d(D_POINT_REPR_PTS).numpy())
+
     if VERBOSE:
         print(f"V(D,G) = {value}")
         print(f"D(x) acc = {d_real_acc}")
@@ -164,3 +174,39 @@ with open(os.path.join(RESULTS_DIR, "hyperparams.json"), "w") as f:
         "G_LR" : G_LR,
         "D_LR" : D_LR
         }, f)
+
+discriminator_reprs = np.array(discriminator_reprs)[...,0]
+pca = PCA(n_components = 2)
+pca.fit(discriminator_reprs)
+ldr = pca.transform(discriminator_reprs)
+# Low-dimensional Representation
+
+if GENERATE_PLOTS:
+    import matplotlib.pyplot as plt
+    fig, (ax1, ax2, ax3) = plt.subplots(3)
+    ax1.set_title("Estimate of V(D,G)")
+    ax1.plot(training_logs["iteration"], training_logs["v"])
+    ax2.set_title("Discriminator Accuracy")
+    ax2.plot(training_logs["iteration"], training_logs["d_real_acc"], label="Real Data")
+    ax2.plot(training_logs["iteration"], training_logs["d_fake_acc"], label="Fake Data")
+    ax2.set_ylim(0, 1)
+    ax2.legend()
+    ax3.set_title("Gradient Magnitude")
+    ax3.plot(training_logs["iteration"], training_logs["d_grad_norm"], label="Discriminator Gradient")
+    ax3.plot(training_logs["iteration"], training_logs["g_grad_norm"], label="Generator Gradient")
+    ax3.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(RESULTS_DIR, "plots.png"))
+    if SHOW_PLOTS:
+        plt.show()
+    plt.close()
+
+    n = ldr.shape[0]
+    cmap = plt.get_cmap("Reds")
+    for i in range(n):
+        plt.scatter(ldr[i,0],ldr[i,1],color=cmap(i/n))
+        if i < n - 1:
+            plt.plot(ldr[i:i+2,0], ldr[i:i+2,1], color=cmap((i+0.5)/n))
+    plt.savefig(os.path.join(RESULTS_DIR, "pca.png"))
+    if SHOW_PLOTS:
+        plt.show()
