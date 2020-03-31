@@ -2,6 +2,8 @@ from torchvision import datasets as torchdatasets
 import numpy as np
 
 class MNIST:
+    """MNIST Handwritten Digit Dataset"""
+
     def __init__(self, normalization="sigmoid", shape="image", download_dir="../data"):
         """Instantiates a new MNIST dataset instance.
 
@@ -42,15 +44,50 @@ class MNIST:
         return f"<{self.__class__.__name__} object, {self.normalization}, {self.shape}>"
 
 
+def smart_mean_selection(n_dims, n_clusters, iters=3, resolution=200):
+    """Selects means that are approximately equidistant from each other, by voronoization"""
+    def voronoize(means):
+        """Approximates a voronoi algorithm by sampling points and adjusting means"""
+        points = np.moveaxis(
+            np.array(np.meshgrid(*[np.linspace(0, 1, resolution) for _ in range(n_dims)], indexing='ij')),
+            0, -1).reshape(-1, means.shape[1])
+        distances = ((points[:, None] - means[None])**2).sum(axis=-1)
+        min_dists = distances.argmin(axis=1)
+        return np.array([
+                np.mean(points[min_dists == i], axis=0)
+            for i in range(means.shape[0])])
+    means = np.random.random((n_clusters, n_dims))
+    for _ in range(iters):
+        means = voronoize(means)
+    return means
+
+
+
 class GMM:
-    def __init__(self, n_dims=2, n_clusters=2):
-        self.cluster_means = 0.1 + 0.8 * np.random.random((n_clusters, n_dims))
+    """Gaussian Mixture Model Toy Dataset"""
+
+    def __init__(self, n_dims=2, n_clusters=2, equal_clusters=False):
+        """Initializes a new GMM dataset instance.
+
+        Arguments:
+        n_dims -- number of dimensions of the GMM
+        n_clusters -- number of distinct clusters to sample from
+        equal_clusters -- whether to sample equally from the clusters (if False,
+                        then distribution across clusters is randomly selected
+                        from {n_clusters}-dimensional simplex)
+        """
+        self.cluster_means = smart_mean_selection(n_dims, n_clusters)
         self.cluster_var = 0.05 + 0.05 * np.random.random((n_clusters, n_dims)) 
         self.cluster_dist = np.random.exponential(1, (n_clusters,))
         self.cluster_dist = self.cluster_dist / self.cluster_dist.sum()
         self.cluster_cdf = np.cumsum(self.cluster_dist)
 
     def sample_train(self, batch_size):
+        """Samples from GMM.
+
+        Arguments:
+        batch_size -- size of batch, number of points to sample
+        """
         batch = []
         for _ in range(batch_size):
             cluster = np.random.random()
