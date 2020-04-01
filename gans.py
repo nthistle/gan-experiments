@@ -18,10 +18,10 @@ from datasets import *
 import json
 import os
 
-DATASET = MNIST(shape="flat")
-RESULTS_DIR = "runs/run3"
+DATASET = GMM(n_clusters=2) #MNIST(shape="flat")
+RESULTS_DIR = "runs/gmm_run3"
 
-D_POINT_REPR_SIZE = 16384
+D_POINT_REPR_SIZE = 256 #16384
 D_POINT_REPR_PTS = DATASET.sample_train(D_POINT_REPR_SIZE)
 
 VERBOSE = False
@@ -29,16 +29,16 @@ GENERATE_PLOTS = True
 SHOW_PLOTS = True
 
 EPSILON = 1e-7
-LATENT_DIM = 32
+LATENT_DIM = 32 #32
 NUM_ITERS = 100
 NUM_MBS = 20
 MB_SIZE = 128 # Minibatch size
 
-g = MNISTFullyConnectedGenerator(latent_dim=LATENT_DIM)
-d = MNISTFullyConnectedDiscriminator()
+g = GMMDenseGenerator(latent_dim=LATENT_DIM) #MNISTFullyConnectedGenerator(latent_dim=LATENT_DIM)
+d = GMMDenseDiscriminator() #MNISTFullyConnectedDiscriminator()
 
-G_LR = 0.05
-D_LR = 0.2
+G_LR = 0.01
+D_LR = 0.01
 
 g_opt = optim.SGD(g.parameters(), lr=G_LR)
 d_opt = optim.SGD(d.parameters(), lr=D_LR)
@@ -154,9 +154,9 @@ for num_it in range(NUM_ITERS):
     training_logs["g_grad_norm"].append(g_grad_norm)
 
     with torch.no_grad():
-        sampled_ims = g(sampling_vec).numpy().reshape(-1, 28, 28)
-    im = convert_to_image(tile_images(sampled_ims, (8,8), 4))
-    im.save(os.path.join(RESULTS_DIR, "iteration_%03d.png" % num_it))
+        sampled_ims = g(sampling_vec).numpy()
+
+    DATASET.write_sample(sampled_ims, os.path.join(RESULTS_DIR, "iteration_%03d" % num_it), consistent=True)
 
 with open(os.path.join(RESULTS_DIR, "logs.csv"), "w") as f:
     keys = list(training_logs.keys())
