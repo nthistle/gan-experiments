@@ -171,6 +171,44 @@ class GMM(Dataset):
             sample = self.sample_train(self.preferred_sample_size)
             plt.scatter(sample[:,0], sample[:,1], label="Real")
 
+        plt.axis("square")
         plt.xlim(0, 1)
         plt.ylim(0, 1)
         plt.savefig(file_path + ".png")
+        plt.close()
+
+
+class Ring2D(Dataset):
+    def __init__(self, r=1/3, count=8, variance=0.01):
+        super().__init__("Ring2D", 256)
+        self.count = count
+        angles = np.linspace(0, 2 * np.pi, count, False)
+        offsets = np.concatenate([np.cos(angles)[:,None], np.sin(angles)[:,None]], axis=1)
+        self.means = r * offsets + ((0.5, 0.5),)
+        self.variance = variance
+        self.consistent_sample = None
+
+    def sample_train(self, batch_size):
+        batch = self.means[np.random.randint(0, self.count, (batch_size,))]
+        # add noise
+        batch += np.random.normal(0, self.variance, (batch_size,2))
+        return torch.from_numpy(batch).float()
+
+    def write_sample(self, generator_sample, file_path, consistent):
+        """Writes a sample of generator points"""
+        if self.consistent_sample is None: # and consistent
+            self.consistent_sample = self.sample_train(self.preferred_sample_size)
+
+        plt.close()
+        plt.scatter(generator_sample[:,0], generator_sample[:,1], label="Fake")
+        if consistent:
+            plt.scatter(self.consistent_sample[:,0], self.consistent_sample[:,1], label="Real")
+        else:
+            sample = self.sample_train(self.preferred_sample_size)
+            plt.scatter(sample[:,0], sample[:,1], label="Real")
+
+        plt.axis("square")
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+        plt.savefig(file_path + ".png")
+        plt.close()
