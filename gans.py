@@ -19,8 +19,8 @@ import json
 import os
 import pickle
 
-DATASET = Ring2D()
-RESULTS_DIR = "runs/ring2d_run3_adam"
+DATASET = Grid2D()
+RESULTS_DIR = "runs/grid2d_run1"
 
 G_POINT_SAVE_FILENAME = "generator_saved_points.pkl"
 
@@ -42,11 +42,11 @@ MB_SIZE = 128 # Minibatch size
 g = GMMDenseGenerator(latent_dim=LATENT_DIM) #MNISTFullyConnectedGenerator(latent_dim=LATENT_DIM)
 d = GMMDenseDiscriminator() #MNISTFullyConnectedDiscriminator()
 
-G_LR = 0.001
-D_LR = 0.001
+G_LR = 0.01
+D_LR = 0.01
 
-g_opt = optim.Adam(g.parameters(), lr=G_LR)
-d_opt = optim.Adam(d.parameters(), lr=D_LR)
+g_opt = optim.SGD(g.parameters(), lr=G_LR)
+d_opt = optim.SGD(d.parameters(), lr=D_LR)
 
 k = 1
 
@@ -197,7 +197,8 @@ with open(os.path.join(RESULTS_DIR, "hyperparams.json"), "w") as f:
         "G_LR" : G_LR,
         "G_OPT" : str(g_opt),
         "D_LR" : D_LR,
-        "D_OPT" : str(d_opt)
+        "D_OPT" : str(d_opt),
+        "SEED" : SEED
         }, f)
 
 if SAVE_G_PTS:
