@@ -169,8 +169,9 @@ for num_it in range(NUM_ITERS):
     training_logs["g_grad_norm"].append(g_grad_norms)
 
     with torch.no_grad():
+        save_sample = g(sample_latent_prior(LATENT_DIM, G_POINT_REPR_PER)).numpy()
         if SAVE_G_PTS:
-            G_POINT_REPR_PTS.append(g(sample_latent_prior(LATENT_DIM, G_POINT_REPR_PER)).numpy())
+            G_POINT_REPR_PTS.append(save_sample)
         sampled_ims = g(sampling_vec).numpy()
 
     DATASET.write_sample(sampled_ims, os.path.join(RESULTS_DIR, "iteration_%03d" % num_it), consistent=True)
