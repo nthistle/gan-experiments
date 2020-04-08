@@ -17,12 +17,17 @@ from datasets import *
 
 import json
 import os
+import pickle
 
-DATASET = GMM(n_clusters=2) #MNIST(shape="flat")
-RESULTS_DIR = "runs/gmm_run3"
+DATASET = Ring2D()
+RESULTS_DIR = "runs/ring2d_run2_lr"
 
-D_POINT_REPR_SIZE = 256 #16384
+G_POINT_SAVE_FILENAME = "generator_saved_points.pkl"
+
+D_POINT_REPR_SIZE = 500 #256 #16384
 D_POINT_REPR_PTS = DATASET.sample_train(D_POINT_REPR_SIZE)
+
+G_POINT_REPR_PER = 5 # how many points to save from G per iteration
 
 VERBOSE = False
 GENERATE_PLOTS = True
@@ -37,8 +42,8 @@ MB_SIZE = 128 # Minibatch size
 g = GMMDenseGenerator(latent_dim=LATENT_DIM) #MNISTFullyConnectedGenerator(latent_dim=LATENT_DIM)
 d = GMMDenseDiscriminator() #MNISTFullyConnectedDiscriminator()
 
-G_LR = 0.01
-D_LR = 0.01
+G_LR = 0.003
+D_LR = 0.003
 
 g_opt = optim.SGD(g.parameters(), lr=G_LR)
 d_opt = optim.SGD(d.parameters(), lr=D_LR)
@@ -58,6 +63,17 @@ discriminator_reprs = []
 if not os.path.exists(RESULTS_DIR):
     os.mkdir(RESULTS_DIR)
 
+if os.path.exists(os.path.join(RESULTS_DIR, G_POINT_SAVE_FILENAME)):
+    with open(os.path.join(RESULTS_DIR, G_POINT_SAVE_FILENAME), "rb") as f:
+        G_POINT_REPR_PTS = pickle.load(f)
+    REPR_PTS = torch.from_numpy(np.concatenate([D_POINT_REPR_PTS, G_POINT_REPR_PTS]))
+    SAVE_G_PTS = False
+else:
+    print("Warning: did not find saved generator samples for point representation!")
+    G_POINT_REPR_PTS = []
+    SAVE_G_PTS = True
+    REPR_PTS = D_POINT_REPR_PTS
+
 # Used for consistent samples
 sampling_vec = sample_latent_prior(LATENT_DIM, 64)
 
@@ -71,8 +87,8 @@ for num_it in range(NUM_ITERS):
     d.train()
 
     ## TODO: Find better way to record/average these (?)
-    d_grad_norm = 0.0 
-    g_grad_norm = 0.0
+    d_grad_norms = []
+    g_grad_norms = []
 
     # With NUM_MBS minibatches each
     for mb_num in range(NUM_MBS):
@@ -105,7 +121,7 @@ for num_it in range(NUM_ITERS):
 
             # Record gradient magnitudes
             with torch.no_grad():
-                d_grad_norm += get_gradient_norm(d.parameters()).item() / (k * NUM_MBS)
+                d_grad_norms.append(get_gradient_norm(d.parameters()).item() / (k * NUM_MBS))
 
 
         # Reset generator gradients
@@ -124,7 +140,7 @@ for num_it in range(NUM_ITERS):
 
         # Record gradient magnitudes
         with torch.no_grad():
-            g_grad_norm += get_gradient_norm(g.parameters()).item() / NUM_MBS
+            g_grad_norms.append(get_gradient_norm(g.parameters()).item() / NUM_MBS)
 
 
     g.eval()
@@ -134,12 +150,11 @@ for num_it in range(NUM_ITERS):
     with torch.no_grad():
         x = DATASET.sample_train(MB_SIZE)
         z = sample_latent_prior(LATENT_DIM, MB_SIZE)
-        value = torch.mean(torch.log(EPSILON + d(x))) + torch.mean(torch.log(EPSILON + 1 - d(g(z))))
-        value = value.item()
-        d_real_acc = (d(x) > 0.5).float().mean().item()
-        d_fake_acc = (d(g(z)) < 0.5).float().mean().item()
+        value = ((torch.log(EPSILON + d(x))) + torch.mean(torch.log(EPSILON + 1 - d(g(z))))).numpy()[:,0]
+        d_real_acc = (d(x) > 0.5).float().numpy()[:,0]
+        d_fake_acc = (d(g(z)) < 0.5).float().numpy()[:,0]
 
-        discriminator_reprs.append(d(D_POINT_REPR_PTS).numpy())
+        discriminator_reprs.append(d(REPR_PTS).numpy())
 
     if VERBOSE:
         print(f"V(D,G) = {value}")
@@ -150,10 +165,12 @@ for num_it in range(NUM_ITERS):
     training_logs["v"].append(value)
     training_logs["d_real_acc"].append(d_real_acc)
     training_logs["d_fake_acc"].append(d_fake_acc)
-    training_logs["d_grad_norm"].append(d_grad_norm)
-    training_logs["g_grad_norm"].append(g_grad_norm)
+    training_logs["d_grad_norm"].append(d_grad_norms)
+    training_logs["g_grad_norm"].append(g_grad_norms)
 
     with torch.no_grad():
+        if SAVE_G_PTS:
+            G_POINT_REPR_PTS.append(g(sample_latent_prior(LATENT_DIM, G_POINT_REPR_PER)).numpy())
         sampled_ims = g(sampling_vec).numpy()
 
     DATASET.write_sample(sampled_ims, os.path.join(RESULTS_DIR, "iteration_%03d" % num_it), consistent=True)
@@ -162,7 +179,12 @@ with open(os.path.join(RESULTS_DIR, "logs.csv"), "w") as f:
     keys = list(training_logs.keys())
     f.write(",".join(keys) + "\n")
     for i in range(len(training_logs["iteration"])):
-        f.write(",".join(str(training_logs[key][i]) for key in keys) + "\n")
+        def get_item(key):
+            item = training_logs[key][i]
+            if hasattr(item, "__len__"):
+                item = sum(item) / len(item) # write the average
+            return item
+        f.write(",".join(str(get_item(key)) for key in keys) + "\n")
 
 with open(os.path.join(RESULTS_DIR, "hyperparams.json"), "w") as f:
     json.dump({
@@ -172,28 +194,36 @@ with open(os.path.join(RESULTS_DIR, "hyperparams.json"), "w") as f:
         "NUM_MBS" : NUM_MBS,
         "MB_SIZE" : MB_SIZE,
         "G_LR" : G_LR,
-        "D_LR" : D_LR
+        "G_OPT" : str(g_opt),
+        "D_LR" : D_LR,
+        "D_OPT" : str(d_opt)
         }, f)
 
+if SAVE_G_PTS:
+    with open(os.path.join(RESULTS_DIR, G_POINT_SAVE_FILENAME), "wb") as f:
+        pickle.dump(np.concatenate(G_POINT_REPR_PTS), f)
+
 discriminator_reprs = np.array(discriminator_reprs)[...,0]
+print("Dimensionality of discriminator representation:",discriminator_reprs.shape)
 pca = PCA(n_components = 2)
 pca.fit(discriminator_reprs)
 ldr = pca.transform(discriminator_reprs)
 # Low-dimensional Representation
 
 if GENERATE_PLOTS:
+    import seaborn as sns; sns.set(style="white", palette="muted", color_codes=True)
     import matplotlib.pyplot as plt
     fig, (ax1, ax2, ax3) = plt.subplots(3)
     ax1.set_title("Estimate of V(D,G)")
-    ax1.plot(training_logs["iteration"], training_logs["v"])
+    sns.lineplot(np.repeat(training_logs["iteration"], MB_SIZE), np.concatenate(training_logs["v"]), ax=ax1)
     ax2.set_title("Discriminator Accuracy")
-    ax2.plot(training_logs["iteration"], training_logs["d_real_acc"], label="Real Data")
-    ax2.plot(training_logs["iteration"], training_logs["d_fake_acc"], label="Fake Data")
+    sns.lineplot(np.repeat(training_logs["iteration"], MB_SIZE), np.concatenate(training_logs["d_real_acc"]), label="Real Data", ax=ax2)
+    sns.lineplot(np.repeat(training_logs["iteration"], MB_SIZE), np.concatenate(training_logs["d_fake_acc"]), label="Fake Data", ax=ax2)
     ax2.set_ylim(0, 1)
     ax2.legend()
     ax3.set_title("Gradient Magnitude")
-    ax3.plot(training_logs["iteration"], training_logs["d_grad_norm"], label="Discriminator Gradient")
-    ax3.plot(training_logs["iteration"], training_logs["g_grad_norm"], label="Generator Gradient")
+    sns.lineplot(np.repeat(training_logs["iteration"], NUM_MBS), np.concatenate(training_logs["d_grad_norm"]), label="Discriminator Gradient", ax=ax3)
+    sns.lineplot(np.repeat(training_logs["iteration"], NUM_MBS), np.concatenate(training_logs["g_grad_norm"]), label="Generator Gradient", ax=ax3)
     ax3.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(RESULTS_DIR, "plots.png"))
