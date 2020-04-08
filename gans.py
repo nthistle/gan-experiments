@@ -20,7 +20,7 @@ import os
 import pickle
 
 DATASET = Ring2D()
-RESULTS_DIR = "runs/ring2d_run2_lr"
+RESULTS_DIR = "runs/ring2d_run3_adam"
 
 G_POINT_SAVE_FILENAME = "generator_saved_points.pkl"
 
@@ -42,11 +42,11 @@ MB_SIZE = 128 # Minibatch size
 g = GMMDenseGenerator(latent_dim=LATENT_DIM) #MNISTFullyConnectedGenerator(latent_dim=LATENT_DIM)
 d = GMMDenseDiscriminator() #MNISTFullyConnectedDiscriminator()
 
-G_LR = 0.003
-D_LR = 0.003
+G_LR = 0.001
+D_LR = 0.001
 
-g_opt = optim.SGD(g.parameters(), lr=G_LR)
-d_opt = optim.SGD(d.parameters(), lr=D_LR)
+g_opt = optim.Adam(g.parameters(), lr=G_LR)
+d_opt = optim.Adam(d.parameters(), lr=D_LR)
 
 k = 1
 
@@ -222,9 +222,10 @@ if GENERATE_PLOTS:
     ax2.set_ylim(0, 1)
     ax2.legend()
     ax3.set_title("Gradient Magnitude")
-    sns.lineplot(np.repeat(training_logs["iteration"], NUM_MBS), np.concatenate(training_logs["d_grad_norm"]), label="Discriminator Gradient", ax=ax3)
-    sns.lineplot(np.repeat(training_logs["iteration"], NUM_MBS), np.concatenate(training_logs["g_grad_norm"]), label="Generator Gradient", ax=ax3)
-    ax3.legend()
+    sns.lineplot(np.repeat(training_logs["iteration"], NUM_MBS), np.concatenate(training_logs["d_grad_norm"]), legend=False, label="Discriminator Gradient", ax=ax3)
+    ax4 = ax3.twinx()
+    sns.lineplot(np.repeat(training_logs["iteration"], NUM_MBS), np.concatenate(training_logs["g_grad_norm"]), legend=False, label="Generator Gradient", color="orange", ax=ax4)
+    ax4.legend(ax3.get_lines() + ax4.get_lines(), [line.get_label() for line in ax3.get_lines()] + [line.get_label() for line in ax4.get_lines()])
     plt.tight_layout()
     plt.savefig(os.path.join(RESULTS_DIR, "plots.png"))
     if SHOW_PLOTS:
